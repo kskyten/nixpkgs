@@ -5725,6 +5725,20 @@ with pkgs;
     llvm = llvm_39;
   });
 
+  inherit (callPackage ../development/compilers/julia/new_default.nix {
+    gmp = gmp6;
+    openblas = openblasCompat;
+    inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+    llvm = llvm_39;
+  }) myjulia;
+
+  # myjulia = lowPrio (callPackage ../development/compilers/julia/new_default.nix {
+  #   gmp = gmp6;
+  #   openblas = openblasCompat;
+  #   inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+  #   llvm = llvm_39;
+  # });
+
   kotlin = callPackage ../development/compilers/kotlin { };
 
   lazarus = callPackage ../development/compilers/fpc/lazarus.nix {
