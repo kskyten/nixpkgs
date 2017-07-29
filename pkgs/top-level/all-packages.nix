@@ -5704,6 +5704,8 @@ with pkgs;
 
   jikes = callPackage ../development/compilers/jikes { };
 
+  ### Julia
+
   julia = callPackage ../development/compilers/julia {
     gmp = gmp6;
     openblas = openblasCompat;
@@ -5732,12 +5734,14 @@ with pkgs;
     llvm = llvm_39;
   }) myjulia;
 
-  # myjulia = lowPrio (callPackage ../development/compilers/julia/new_default.nix {
-  #   gmp = gmp6;
-  #   openblas = openblasCompat;
-  #   inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
-  #   llvm = llvm_39;
-  # });
+
+  buildJuliaPackage = callPackage ../development/julia-modules/generic myjulia;
+
+  juliaPackages = recurseIntoAttrs (callPackage ./julia-packages.nix {
+    overrides = (config.juliaPackageOverrides or (p: {})) pkgs;
+  });
+
+  ### End of Julia
 
   kotlin = callPackage ../development/compilers/kotlin { };
 
