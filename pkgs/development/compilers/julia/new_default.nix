@@ -166,6 +166,8 @@ rec {
       done
     '';
 
+    setupHook = ./setup-hook.sh
+
     meta = {
       description = "High-level performance-oriented dynamical language for technical computing";
       homepage = "http://julialang.org/";
