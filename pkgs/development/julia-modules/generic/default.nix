@@ -7,11 +7,12 @@ julia.stdenv.mkDerivation (
     doCheck = false;
     # doInstallCheck = true;
 
-  JULIA_LOAD_PATH = "$JULIA_LOAD_PATH:$out";
+  # JULIA_LOAD_PATH =
+  # ''$JULIA_LOAD_PATH${JULIA_LOAD_PATH:+:}$out/julia-packages/${name}'';
 
   installPhase = ''
-    mkdir -p $out
-    cp -R ${src}/* $out
+    mkdir -p $out/julia-packages/${name}
+    cp -R ${src}/* $out/julia-packages/${name}
     '';
 
   postFixup = ''
@@ -26,7 +27,7 @@ julia.stdenv.mkDerivation (
   //
   {
     name = "julia-" + name;
-    # builder = ./builder.sh;
+    builder = ./builder.sh;
     buildInputs = buildInputs ++ [ julia ];
   }
 )
