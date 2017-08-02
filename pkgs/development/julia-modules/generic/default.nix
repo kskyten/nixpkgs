@@ -2,11 +2,15 @@ julia:
 
 { buildInputs ? [], name, src, ... } @ attrs:
 
-let self = julia.stdenv.mkDerivation (
+julia.stdenv.mkDerivation (
 
   {
     doCheck = false;
-    # doInstallCheck = true;
+    doInstallCheck = false;
+
+    installCheck = ''
+      julia $out/test/runtests.jl
+      '';
 
   installPhase = ''
     mkdir -p $out
@@ -20,20 +24,6 @@ let self = julia.stdenv.mkDerivation (
   {
     name = "julia-" + name;
     buildInputs = buildInputs ++ [ julia ];
-  }
-);
-
-in
-
-julia.stdenv.mkDerivation (
-  attrs // {
-  name = self.name;
- 
-  installPhase = ''
-    mkdir -p $out
-    cp -R ${src}/* $out
-    '';
-
-  JULIA_LOAD_PATH = "${self}/src";
+    JULIA_LOAD_PATH = "$out/src";
   }
 )
