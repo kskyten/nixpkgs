@@ -23,6 +23,9 @@ let self = _self // overrides; _self = with self; {
       rev = "ad6275b99c39ed6f3f63996d38fc8269ecf98372";
       sha256 = "0pbgm9h6f0q19xvvj82jn8bkd8643r9jd39wcr1pzz9p0p3igpdg";
     };
+
+    # not really a dependency
+    buildInputs = [ MLKernels ];
   };
 
 }; in self
