@@ -15186,6 +15186,8 @@ with pkgs;
 
   mpc_cli = callPackage ../applications/audio/mpc { };
 
+  myrepos = callPackage ../applications/version-management/myrepos { };
+
   clerk = callPackage ../applications/audio/clerk { };
 
   nbstripout = callPackage ../applications/version-management/nbstripout { };
