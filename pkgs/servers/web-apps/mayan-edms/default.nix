@@ -1,4 +1,5 @@
-{ pkgs, stdenv, fetchFromGitLab, nginx, redis, postgresql, unpaper, tesseract, poppler, libpng }:
+{ pkgs, stdenv, fetchFromGitLab, nginx, redis,
+  postgresql, unpaper, tesseract, poppler, libpng, python2 }:
 # { stdenv, fetchFromGitLab, nginx, supervisor, redis, postgresql, unpaper, tesseract, poppler, libpng }:
 
 stdenv.mkDerivation rec {
@@ -13,8 +14,8 @@ stdenv.mkDerivation rec {
     sha256 = "1myndmwhc7y0r54aicyi697j8j3rrq67h2jqvncd0m7wrm6ibsmj";
     };
 
-    pydeps = with pkgs.python27Packages; [ supervisor psycopg2 redis ipython ];
-    buildInputs = [ nginx redis postgresql unpaper tesseract poppler libpng ] ++ pydeps;
+    pydeps = with pkgs.python27Packages; [ supervisor psycopg2 redis ipython django ];
+    buildInputs = [ nginx redis postgresql unpaper tesseract poppler libpng python2 ] ++ pydeps;
 
     meta = {
     description = "Free Open Source DMS (document management system)";
