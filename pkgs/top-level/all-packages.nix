@@ -11276,6 +11276,8 @@ with pkgs;
 
   influxdb = callPackage ../servers/nosql/influxdb { };
 
+  mayan-edms = callPackage ../servers/web-apps/mayan-edms { };
+
   mysql55 = callPackage ../servers/sql/mysql/5.5.x.nix {
     inherit (darwin) cctools;
     inherit (darwin.apple_sdk.frameworks) CoreServices;
