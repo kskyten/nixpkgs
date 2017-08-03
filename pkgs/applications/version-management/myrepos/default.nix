@@ -11,10 +11,7 @@ stdenv.mkDerivation rec {
     };
 
     buildInputs = [ perl ];
-
-    DESTDIR = "$(out)";
-    PREFIX = "";
-
+    installFlags = "PREFIX=$(out)";
     checkTarget = "test";
 
     meta = {
