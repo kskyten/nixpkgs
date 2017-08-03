@@ -1,4 +1,4 @@
-{ stdenv, fetchFromGitHub, cudatoolkit, gcc, cmake, python2, fftwSinglePrec, doxygen }:
+{ stdenv, fetchFromGitHub, cudatoolkit, gcc, cmakeCurses, python2, fftwSinglePrec, doxygen }:
 
 stdenv.mkDerivation rec {
   name = "openmm-${version}";
@@ -11,7 +11,7 @@ stdenv.mkDerivation rec {
     sha256 = "1fdimwp0i7jbbw707mkhz87xigki12d2slba1dq1sl985yn1ykkp";
     };
 
-    buildInputs = [ cudatoolkit gcc cmake ];
+    buildInputs = [ cudatoolkit gcc cmakeCurses python2 doxygen fftwSinglePrec ];
 
     meta = {
     description = "OpenMM is a toolkit for molecular simulation using high performance GPU code.";
