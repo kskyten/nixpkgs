@@ -17960,6 +17960,10 @@ with pkgs;
     cmake = cmakeCurses;
   });
 
+  openmm = callPackage ../applications/science/molecular-dynamics/openmm {
+    cudatoolkit = cudatoolkit8;
+  };
+
   ### PHYSICS
 
   sacrifice = callPackage ../applications/science/physics/sacrifice {};
