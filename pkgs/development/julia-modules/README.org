@@ -1,0 +1,1329 @@
+* default.nix
+* shell.nix
+  #+BEGIN_SRC nix :tangle shell.nix
+    with import <nixpkgs> { };
+  #+END_SRC
+* runtests.sh
+* install.sh
+  #+BEGIN_SRC sh :tangle install.sh
+    #1 /ust/bin/env sh
+    echo "Overwriting pkgs/development/julia-modules/default.nix"
+    echo "Overwriting pkgs/development/compilers/julia/default.nix"
+    echo "Overwriting pkgs/top-level/julia-packages.nix"
+
+    echo "You will have to manually copy any changes to"
+    echo "pkgs/top-level/all-packages.nix."
+  #+END_SRC
+* tests
+** script
+   #+BEGIN_SRC julia :tangle tests/script
+     #! /usr/bin/nix-shell
+     #!
+     @test 1 == 1
+   #+END_SRC
+** shell.nix
+   #+BEGIN_SRC nix :tangle tests/shell.nix
+     let
+       pkgs = import <nixpkgs> {};
+       stdenv = pkgs.stdenv;
+     in with pkgs; {
+       myProject = stdenv.mkDerivation {
+	 name = "myProject";
+	 version = "1";
+	 src = if pkgs.lib.inNixShell then null else nix;
+
+	 # pkgs.rPackages
+	 buildInputs = with rPackages; [
+	   R
+	   ggplot2
+	   knitr
+	 ];
+       };
+     }
+   #+END_SRC
+* Julia                                                             :nixroot:
+** top-level
+*** all-packages.nix
+    #+BEGIN_SRC nix :tangle pkgs/top-level/all-definitions.nix
+
+	R = callPackage ../applications/science/math/R {
+	  # TODO: split docs into a separate output
+	  texLive = texlive.combine {
+	    inherit (texlive) scheme-small inconsolata helvetic texinfo fancyvrb cm-super;
+	  };
+	  openblas = openblasCompat;
+	  withRecommendedPackages = false;
+	  inherit (darwin.apple_sdk.frameworks) Cocoa Foundation;
+	  inherit (darwin) cf-private libobjc;
+	};
+
+	rWrapper = callPackage ../development/r-modules/wrapper.nix {
+	  recommendedPackages = with rPackages; [
+	    boot class cluster codetools foreign KernSmooth lattice MASS
+	    Matrix mgcv nlme nnet rpart spatial survival
+	  ];
+	  # Override this attribute to register additional libraries.
+	  packages = [];
+	};
+
+	rPackages = callPackage ../development/r-modules {
+	  overrides = (config.rPackageOverrides or (p: {})) pkgs;
+	};
+
+    #+END_SRC
+*** julia-packages.nix
+** development
+*** julia-modules
+**** default.nix
+     #+BEGIN_SRC nix :tangle default.nix
+       /* This file defines the composition for CRAN (R) packages. */
+
+       { R, pkgs, overrides }:
+
+       let
+	 inherit (pkgs) fetchurl stdenv lib;
+
+	 buildRPackage = pkgs.callPackage ./generic-builder.nix {
+	   inherit R;
+	   inherit (pkgs.darwin.apple_sdk.frameworks) Cocoa Foundation;
+	   inherit (pkgs) gettext gfortran;
+	 };
+
+	 # Generates package templates given per-repository settings
+	 #
+	 # some packages, e.g. cncaGUI, require X running while installation,
+	 # so that we use xvfb-run if requireX is true.
+	 mkDerive = {mkHomepage, mkUrls}: args:
+	     lib.makeOverridable ({
+	       name, version, sha256,
+	       depends ? [],
+	       doCheck ? true,
+	       requireX ? false,
+	       broken ? false,
+	       hydraPlatforms ? R.meta.hydraPlatforms
+	     }: buildRPackage {
+	   name = "${name}-${version}";
+	   src = fetchurl {
+	     inherit sha256;
+	     urls = mkUrls (args // { inherit name version; });
+	   };
+	   inherit doCheck requireX;
+	   propagatedBuildInputs = depends;
+	   nativeBuildInputs = depends;
+	   meta.homepage = mkHomepage (args // { inherit name; });
+	   meta.platforms = R.meta.platforms;
+	   meta.hydraPlatforms = hydraPlatforms;
+	   meta.broken = broken;
+	 });
+
+	 # Templates for generating Bioconductor and CRAN packages
+	 # from the name, version, sha256, and optional per-package arguments above
+	 #
+	 deriveBioc = mkDerive {
+	   mkHomepage = {name, rVersion}: "https://bioconductor.org/packages/${rVersion}/bioc/html/${name}.html";
+	   mkUrls = {name, version, rVersion}: [ "mirror://bioc/${rVersion}/bioc/src/contrib/${name}_${version}.tar.gz" ];
+	 };
+	 deriveBiocAnn = mkDerive {
+	   mkHomepage = {name, rVersion}: "http://www.bioconductor.org/packages/${name}.html";
+	   mkUrls = {name, version, rVersion}: [ "mirror://bioc/${rVersion}/data/annotation/src/contrib/${name}_${version}.tar.gz" ];
+	 };
+	 deriveBiocExp = mkDerive {
+	   mkHomepage = {name, rVersion}: "http://www.bioconductor.org/packages/${name}.html";
+	   mkUrls = {name, version, rVersion}: [ "mirror://bioc/${rVersion}/data/experiment/src/contrib/${name}_${version}.tar.gz" ];
+	 };
+	 deriveCran = mkDerive {
+	   mkHomepage = {name, snapshot}: "http://mran.revolutionanalytics.com/snapshot/${snapshot}/web/packages/${name}/";
+	   mkUrls = {name, version, snapshot}: [ "http://mran.revolutionanalytics.com/snapshot/${snapshot}/src/contrib/${name}_${version}.tar.gz" ];
+	 };
+
+	 # Overrides package definitions with nativeBuildInputs.
+	 # For example,
+	 #
+	 # overrideNativeBuildInputs {
+	 #   foo = [ pkgs.bar ]
+	 # } old
+	 #
+	 # results in
+	 #
+	 # {
+	 #   foo = old.foo.overrideDerivation (attrs: {
+	 #     nativeBuildInputs = attrs.nativeBuildInputs ++ [ pkgs.bar ];
+	 #   });
+	 # }
+	 overrideNativeBuildInputs = overrides: old:
+	   lib.mapAttrs (name: value:
+	     (builtins.getAttr name old).overrideDerivation (attrs: {
+	       nativeBuildInputs = attrs.nativeBuildInputs ++ value;
+	     })
+	   ) overrides;
+
+	 # Overrides package definitions with buildInputs.
+	 # For example,
+	 #
+	 # overrideBuildInputs {
+	 #   foo = [ pkgs.bar ]
+	 # } old
+	 #
+	 # results in
+	 #
+	 # {
+	 #   foo = old.foo.overrideDerivation (attrs: {
+	 #     buildInputs = attrs.buildInputs ++ [ pkgs.bar ];
+	 #   });
+	 # }
+	 overrideBuildInputs = overrides: old:
+	   lib.mapAttrs (name: value:
+	     (builtins.getAttr name old).overrideDerivation (attrs: {
+	       buildInputs = attrs.buildInputs ++ value;
+	     })
+	   ) overrides;
+
+	 # Overrides package definitions with new R dependencies.
+	 # For example,
+	 #
+	 # overrideRDepends {
+	 #   foo = [ self.bar ]
+	 # } old
+	 #
+	 # results in
+	 #
+	 # {
+	 #   foo = old.foo.overrideDerivation (attrs: {
+	 #     nativeBuildInputs = attrs.nativeBuildInputs ++ [ self.bar ];
+	 #     propagatedNativeBuildInputs = attrs.propagatedNativeBuildInputs ++ [ self.bar ];
+	 #   });
+	 # }
+	 overrideRDepends = overrides: old:
+	   lib.mapAttrs (name: value:
+	     (builtins.getAttr name old).overrideDerivation (attrs: {
+	       nativeBuildInputs = attrs.nativeBuildInputs ++ value;
+	       propagatedNativeBuildInputs = attrs.propagatedNativeBuildInputs ++ value;
+	     })
+	   ) overrides;
+
+	 # Overrides package definition requiring X running to install.
+	 # For example,
+	 #
+	 # overrideRequireX [
+	 #   "foo"
+	 # ] old
+	 #
+	 # results in
+	 #
+	 # {
+	 #   foo = old.foo.override {
+	 #     requireX = true;
+	 #   };
+	 # }
+	 overrideRequireX = packageNames: old:
+	   let
+	     nameValuePairs = map (name: {
+	       inherit name;
+	       value = (builtins.getAttr name old).override {
+		 requireX = true;
+	       };
+	     }) packageNames;
+	   in
+	     builtins.listToAttrs nameValuePairs;
+
+	 # Overrides package definition to skip check.
+	 # For example,
+	 #
+	 # overrideSkipCheck [
+	 #   "foo"
+	 # ] old
+	 #
+	 # results in
+	 #
+	 # {
+	 #   foo = old.foo.override {
+	 #     doCheck = false;
+	 #   };
+	 # }
+	 overrideSkipCheck = packageNames: old:
+	   let
+	     nameValuePairs = map (name: {
+	       inherit name;
+	       value = (builtins.getAttr name old).override {
+		 doCheck = false;
+	       };
+	     }) packageNames;
+	   in
+	     builtins.listToAttrs nameValuePairs;
+
+	 # Overrides package definition to mark it broken.
+	 # For example,
+	 #
+	 # overrideBroken [
+	 #   "foo"
+	 # ] old
+	 #
+	 # results in
+	 #
+	 # {
+	 #   foo = old.foo.override {
+	 #     broken = true;
+	 #   };
+	 # }
+	 overrideBroken = packageNames: old:
+	   let
+	     nameValuePairs = map (name: {
+	       inherit name;
+	       value = (builtins.getAttr name old).override {
+		 broken = true;
+	       };
+	     }) packageNames;
+	   in
+	     builtins.listToAttrs nameValuePairs;
+
+	 defaultOverrides = old: new:
+	   let old0 = old; in
+	   let
+	     old1 = old0 // (overrideRequireX packagesRequireingX old0);
+	     old2 = old1 // (overrideSkipCheck packagesToSkipCheck old1);
+	     old3 = old2 // (overrideRDepends packagesWithRDepends old2);
+	     old4 = old3 // (overrideNativeBuildInputs packagesWithNativeBuildInputs old3);
+	     old5 = old4 // (overrideBuildInputs packagesWithBuildInputs old4);
+	     old6 = old5 // (overrideBroken brokenPackages old5);
+	     old = old6;
+	   in old // (otherOverrides old new);
+
+	 # Recursive override pattern.
+	 # `_self` is a collection of packages;
+	 # `self` is `_self` with overridden packages;
+	 # packages in `_self` may depends on overridden packages.
+	 self = (defaultOverrides _self self) // overrides;
+	 _self = import ./bioc-packages.nix { inherit self; derive = deriveBioc; } //
+		 import ./bioc-annotation-packages.nix { inherit self; derive = deriveBiocAnn; } //
+		 import ./bioc-experiment-packages.nix { inherit self; derive = deriveBiocExp; } //
+		 import ./cran-packages.nix { inherit self; derive = deriveCran; };
+
+	 # tweaks for the individual packages and "in self" follow
+
+	 packagesWithRDepends = {
+	   FactoMineR = [ self.car ];
+	   pander = [ self.codetools ];
+	 };
+
+	 packagesWithNativeBuildInputs = {
+	   abn = [ pkgs.gsl_1 ];
+	   adimpro = [ pkgs.imagemagick ];
+	   audio = [ pkgs.portaudio ];
+	   BayesSAE = [ pkgs.gsl_1 ];
+	   BayesVarSel = [ pkgs.gsl_1 ];
+	   BayesXsrc = [ pkgs.readline.dev pkgs.ncurses ];
+	   bigGP = [ pkgs.openmpi ];
+	   bio3d = [ pkgs.zlib ];
+	   BiocCheck = [ pkgs.which ];
+	   Biostrings = [ pkgs.zlib ];
+	   bnpmr = [ pkgs.gsl_1 ];
+	   cairoDevice = [ pkgs.gtk2.dev ];
+	   Cairo = [ pkgs.libtiff pkgs.libjpeg pkgs.cairo.dev pkgs.x11 pkgs.fontconfig.lib ];
+	   Cardinal = [ pkgs.which ];
+	   chebpol = [ pkgs.fftw ];
+	   ChemmineOB = [ pkgs.openbabel pkgs.pkgconfig ];
+	   cit = [ pkgs.gsl_1 ];
+	   curl = [ pkgs.curl.dev ];
+	   devEMF = [ pkgs.xorg.libXft.dev pkgs.x11 ];
+	   diversitree = [ pkgs.gsl_1 pkgs.fftw ];
+	   EMCluster = [ pkgs.liblapack ];
+	   fftw = [ pkgs.fftw.dev ];
+	   fftwtools = [ pkgs.fftw.dev ];
+	   Formula = [ pkgs.gmp ];
+	   geoCount = [ pkgs.gsl_1 ];
+	   git2r = [ pkgs.zlib.dev pkgs.openssl.dev ];
+	   GLAD = [ pkgs.gsl_1 ];
+	   glpkAPI = [ pkgs.gmp pkgs.glpk ];
+	   gmp = [ pkgs.gmp.dev ];
+	   graphscan = [ pkgs.gsl_1 ];
+	   gsl = [ pkgs.gsl_1 ];
+	   h5 = [ pkgs.hdf5-cpp pkgs.which ];
+	   h5vc = [ pkgs.zlib.dev ];
+	   HiCseg = [ pkgs.gsl_1 ];
+	   imager = [ pkgs.x11 ];
+	   iBMQ = [ pkgs.gsl_1 ];
+	   igraph = [ pkgs.gmp ];
+	   JavaGD = [ pkgs.jdk ];
+	   jpeg = [ pkgs.libjpeg.dev ];
+	   KFKSDS = [ pkgs.gsl_1 ];
+	   kza = [ pkgs.fftw.dev ];
+	   libamtrack = [ pkgs.gsl_1 ];
+	   mixcat = [ pkgs.gsl_1 ];
+	   mvabund = [ pkgs.gsl_1 ];
+	   mwaved = [ pkgs.fftw.dev ];
+	   ncdf4 = [ pkgs.netcdf ];
+	   nloptr = [ pkgs.nlopt ];
+	   openssl = [ pkgs.openssl.dev ];
+	   outbreaker = [ pkgs.gsl_1 ];
+	   pander = [ pkgs.pandoc pkgs.which ];
+	   pbdMPI = [ pkgs.openmpi ];
+	   pbdNCDF4 = [ pkgs.netcdf ];
+	   pbdPROF = [ pkgs.openmpi ];
+	   pbdZMQ = [ pkgs.which ];
+	   PKI = [ pkgs.openssl.dev ];
+	   png = [ pkgs.libpng.dev ];
+	   PopGenome = [ pkgs.zlib.dev ];
+	   proj4 = [ pkgs.proj ];
+	   qtbase = [ pkgs.qt4 ];
+	   qtpaint = [ pkgs.qt4 ];
+	   R2GUESS = [ pkgs.gsl_1 ];
+	   R2SWF = [ pkgs.zlib pkgs.libpng pkgs.freetype.dev ];
+	   RAppArmor = [ pkgs.libapparmor ];
+	   rapportools = [ pkgs.which ];
+	   rapport = [ pkgs.which ];
+	   rbamtools = [ pkgs.zlib.dev ];
+	   rcdd = [ pkgs.gmp.dev ];
+	   RcppCNPy = [ pkgs.zlib.dev ];
+	   RcppGSL = [ pkgs.gsl_1 ];
+	   RcppOctave = [ pkgs.zlib pkgs.bzip2.dev pkgs.icu pkgs.lzma.dev pkgs.pcre.dev pkgs.octave ];
+	   RcppZiggurat = [ pkgs.gsl_1 ];
+	   rgdal = [ pkgs.proj pkgs.gdal ];
+	   rgeos = [ pkgs.geos ];
+	   rggobi = [ pkgs.ggobi pkgs.gtk2.dev pkgs.libxml2.dev ];
+	   rgl = [ pkgs.mesa pkgs.xlibsWrapper ];
+	   Rglpk = [ pkgs.glpk ];
+	   RGtk2 = [ pkgs.gtk2.dev ];
+	   rhdf5 = [ pkgs.zlib ];
+	   Rhpc = [ pkgs.zlib pkgs.bzip2.dev pkgs.icu pkgs.lzma.dev pkgs.openmpi pkgs.pcre.dev ];
+	   Rhtslib = [ pkgs.zlib.dev ];
+	   RJaCGH = [ pkgs.zlib.dev ];
+	   rjags = [ pkgs.jags ];
+	   rJava = [ pkgs.zlib pkgs.bzip2.dev pkgs.icu pkgs.lzma.dev pkgs.pcre.dev pkgs.jdk pkgs.libzip ];
+	   Rlibeemd = [ pkgs.gsl_1 ];
+	   rmatio = [ pkgs.zlib.dev ];
+	   Rmpfr = [ pkgs.gmp pkgs.mpfr.dev ];
+	   Rmpi = [ pkgs.openmpi ];
+	   RMySQL = [ pkgs.zlib pkgs.mysql.lib ];
+	   RNetCDF = [ pkgs.netcdf pkgs.udunits ];
+	   RODBCext = [ pkgs.libiodbc ];
+	   RODBC = [ pkgs.libiodbc ];
+	   rpg = [ pkgs.postgresql ];
+	   rphast = [ pkgs.pcre.dev pkgs.zlib pkgs.bzip2 pkgs.gzip pkgs.readline ];
+	   Rpoppler = [ pkgs.poppler ];
+	   RPostgreSQL = [ pkgs.postgresql ];
+	   RProtoBuf = [ pkgs.protobuf ];
+	   rPython = [ pkgs.python ];
+	   RSclient = [ pkgs.openssl.dev ];
+	   Rserve = [ pkgs.openssl ];
+	   Rssa = [ pkgs.fftw.dev ];
+	   rtfbs = [ pkgs.zlib pkgs.pcre.dev pkgs.bzip2 pkgs.gzip pkgs.readline ];
+	   rtiff = [ pkgs.libtiff.dev ];
+	   runjags = [ pkgs.jags ];
+	   RVowpalWabbit = [ pkgs.zlib.dev pkgs.boost ];
+	   rzmq = [ pkgs.zeromq3 ];
+	   SAVE = [ pkgs.zlib pkgs.bzip2 pkgs.icu pkgs.lzma pkgs.pcre ];
+	   sdcTable = [ pkgs.gmp pkgs.glpk ];
+	   seewave = [ pkgs.fftw.dev pkgs.libsndfile.dev ];
+	   seqinr = [ pkgs.zlib.dev ];
+	   seqminer = [ pkgs.zlib.dev pkgs.bzip2 ];
+	   showtext = [ pkgs.zlib pkgs.libpng pkgs.icu pkgs.freetype.dev ];
+	   simplexreg = [ pkgs.gsl_1 ];
+	   SOD = [ pkgs.opencl-headers ];
+	   spate = [ pkgs.fftw.dev ];
+	   sprint = [ pkgs.openmpi ];
+	   ssanv = [ pkgs.proj ];
+	   stsm = [ pkgs.gsl_1 ];
+	   stringi = [ pkgs.icu.dev ];
+	   survSNP = [ pkgs.gsl_1 ];
+	   sysfonts = [ pkgs.zlib pkgs.libpng pkgs.freetype.dev ];
+	   TAQMNGR = [ pkgs.zlib.dev ];
+	   tiff = [ pkgs.libtiff.dev ];
+	   TKF = [ pkgs.gsl_1 ];
+	   tkrplot = [ pkgs.xorg.libX11 pkgs.tk.dev ];
+	   topicmodels = [ pkgs.gsl_1 ];
+	   udunits2 = [ pkgs.udunits pkgs.expat ];
+	   V8 = [ pkgs.v8 ];
+	   VBLPCM = [ pkgs.gsl_1 ];
+	   VBmix = [ pkgs.gsl_1 pkgs.fftw pkgs.qt4 ];
+	   WhopGenome = [ pkgs.zlib.dev ];
+	   XBRL = [ pkgs.zlib pkgs.libxml2.dev ];
+	   xml2 = [ pkgs.libxml2.dev ];
+	   XML = [ pkgs.libtool pkgs.libxml2.dev pkgs.xmlsec pkgs.libxslt ];
+	   affyPLM = [ pkgs.zlib.dev ];
+	   bamsignals = [ pkgs.zlib.dev ];
+	   BitSeq = [ pkgs.zlib.dev ];
+	   DiffBind = [ pkgs.zlib ];
+	   ShortRead = [ pkgs.zlib.dev ];
+	   oligo = [ pkgs.zlib.dev ];
+	   gmapR = [ pkgs.zlib.dev ];
+	   Rsubread = [ pkgs.zlib.dev ];
+	   XVector = [ pkgs.zlib.dev ];
+	   Rsamtools = [ pkgs.zlib.dev ];
+	   rtracklayer = [ pkgs.zlib.dev ];
+	   affyio = [ pkgs.zlib.dev ];
+	   VariantAnnotation = [ pkgs.zlib.dev ];
+	   snpStats = [ pkgs.zlib.dev ];
+	   gputools = [ pkgs.pcre.dev pkgs.lzma.dev pkgs.zlib.dev pkgs.bzip2.dev pkgs.icu.dev ];
+	 };
+
+	 packagesWithBuildInputs = {
+	   # sort -t '=' -k 2
+	   svKomodo = [ pkgs.which ];
+	   nat = [ pkgs.which ];
+	   nat_nblast = [ pkgs.which ];
+	   nat_templatebrains = [ pkgs.which ];
+	   RMark = [ pkgs.which ];
+	   RPushbullet = [ pkgs.which ];
+	   qtpaint = [ pkgs.cmake ];
+	   qtbase = [ pkgs.cmake pkgs.perl ];
+	   gmatrix = [ pkgs.cudatoolkit pkgs.which ];
+	   RCurl = [ pkgs.curl.dev ];
+	   R2SWF = [ pkgs.pkgconfig ];
+	   rggobi = [ pkgs.pkgconfig ];
+	   RGtk2 = [ pkgs.pkgconfig ];
+	   RProtoBuf = [ pkgs.pkgconfig ];
+	   Rpoppler = [ pkgs.pkgconfig ];
+	   VBmix = [ pkgs.pkgconfig ];
+	   XML = [ pkgs.pkgconfig ];
+	   cairoDevice = [ pkgs.pkgconfig ];
+	   chebpol = [ pkgs.pkgconfig ];
+	   fftw = [ pkgs.pkgconfig ];
+	   geoCount = [ pkgs.pkgconfig ];
+	   kza = [ pkgs.pkgconfig ];
+	   mwaved = [ pkgs.pkgconfig ];
+	   showtext = [ pkgs.pkgconfig ];
+	   spate = [ pkgs.pkgconfig ];
+	   stringi = [ pkgs.pkgconfig ];
+	   sysfonts = [ pkgs.pkgconfig ];
+	   Cairo = [ pkgs.pkgconfig ];
+	   Rsymphony = [ pkgs.pkgconfig pkgs.doxygen pkgs.graphviz pkgs.subversion ];
+	   qtutils = [ pkgs.qt4 ];
+	   tcltk2 = [ pkgs.tcl pkgs.tk ];
+	   tikzDevice = [ pkgs.which pkgs.texlive.combined.scheme-medium ];
+	   rPython = [ pkgs.which ];
+	   gridGraphics = [ pkgs.which ];
+	   gputools = [ pkgs.which pkgs.cudatoolkit ];
+	   adimpro = [ pkgs.which pkgs.xorg.xdpyinfo ];
+	   PET = [ pkgs.which pkgs.xorg.xdpyinfo pkgs.imagemagick ];
+	   dti = [ pkgs.which pkgs.xorg.xdpyinfo pkgs.imagemagick ];
+	   mzR = [ pkgs.netcdf ];
+	 };
+
+	 packagesRequireingX = [
+	   "accrual"
+	   "ade4TkGUI"
+	   "adehabitat"
+	   "analogue"
+	   "analogueExtra"
+	   "AnalyzeFMRI"
+	   "AnnotLists"
+	   "AnthropMMD"
+	   "aplpack"
+	   "aqfig"
+	   "arf3DS4"
+	   "asbio"
+	   "AtelieR"
+	   "BAT"
+	   "bayesDem"
+	   "BCA"
+	   "BEQI2"
+	   "betapart"
+	   "betaper"
+	   "BiodiversityR"
+	   "BioGeoBEARS"
+	   "bio_infer"
+	   "bipartite"
+	   "biplotbootGUI"
+	   "blender"
+	   "cairoDevice"
+	   "CCTpack"
+	   "cncaGUI"
+	   "cocorresp"
+	   "CommunityCorrelogram"
+	   "confidence"
+	   "constrainedKriging"
+	   "ConvergenceConcepts"
+	   "cpa"
+	   "DALY"
+	   "dave"
+	   "debug"
+	   "Deducer"
+	   "DeducerExtras"
+	   "DeducerPlugInExample"
+	   "DeducerPlugInScaling"
+	   "DeducerSpatial"
+	   "DeducerSurvival"
+	   "DeducerText"
+	   "Demerelate"
+	   "detrendeR"
+	   "dgmb"
+	   "DivMelt"
+	   "dpa"
+	   "DSpat"
+	   "dynamicGraph"
+	   "dynBiplotGUI"
+	   "EasyqpcR"
+	   "EcoVirtual"
+	   "ENiRG"
+	   "EnQuireR"
+	   "eVenn"
+	   "exactLoglinTest"
+	   "FAiR"
+	   "fat2Lpoly"
+	   "fbati"
+	   "FD"
+	   "feature"
+	   "FeedbackTS"
+	   "FFD"
+	   "fgui"
+	   "fisheyeR"
+	   "fit4NM"
+	   "forams"
+	   "forensim"
+	   "FreeSortR"
+	   "fscaret"
+	   "fSRM"
+	   "gcmr"
+	   "GeoGenetix"
+	   "geomorph"
+	   "geoR"
+	   "geoRglm"
+	   "georob"
+	   "GeoXp"
+	   "GGEBiplotGUI"
+	   "gnm"
+	   "GPCSIV"
+	   "GrammR"
+	   "GrapheR"
+	   "GroupSeq"
+	   "gsubfn"
+	   "GUniFrac"
+	   "gWidgets2RGtk2"
+	   "gWidgets2tcltk"
+	   "gWidgetsRGtk2"
+	   "gWidgetstcltk"
+	   "HH"
+	   "HiveR"
+	   "HomoPolymer"
+	   "iBUGS"
+	   "ic50"
+	   "iDynoR"
+	   "in2extRemes"
+	   "iplots"
+	   "isopam"
+	   "IsotopeR"
+	   "JGR"
+	   "KappaGUI"
+	   "likeLTD"
+	   "logmult"
+	   "LS2Wstat"
+	   "MAR1"
+	   "MareyMap"
+	   "memgene"
+	   "MergeGUI"
+	   "metacom"
+	   "Meth27QC"
+	   "MetSizeR"
+	   "MicroStrategyR"
+	   "migui"
+	   "miniGUI"
+	   "MissingDataGUI"
+	   "mixsep"
+	   "mlDNA"
+	   "MplusAutomation"
+	   "mpmcorrelogram"
+	   "mritc"
+	   "MTurkR"
+	   "multgee"
+	   "multibiplotGUI"
+	   "nodiv"
+	   "OligoSpecificitySystem"
+	   "onemap"
+	   "OpenRepGrid"
+	   "palaeoSig"
+	   "paleoMAS"
+	   "pbatR"
+	   "PBSadmb"
+	   "PBSmodelling"
+	   "PCPS"
+	   "pez"
+	   "phylotools"
+	   "picante"
+	   "PKgraph"
+	   "playwith"
+	   "plotSEMM"
+	   "plsRbeta"
+	   "plsRglm"
+	   "PopGenReport"
+	   "poppr"
+	   "powerpkg"
+	   "PredictABEL"
+	   "prefmod"
+	   "PrevMap"
+	   "ProbForecastGOP"
+	   "QCAGUI"
+	   "qtbase"
+	   "qtpaint"
+	   "qtutils"
+	   "R2STATS"
+	   "r4ss"
+	   "RandomFields"
+	   "rareNMtests"
+	   "rAverage"
+	   "Rcmdr"
+	   "RcmdrPlugin_BCA"
+	   "RcmdrPlugin_coin"
+	   "RcmdrPlugin_depthTools"
+	   "RcmdrPlugin_DoE"
+	   "RcmdrPlugin_doex"
+	   "RcmdrPlugin_EACSPIR"
+	   "RcmdrPlugin_EBM"
+	   "RcmdrPlugin_EcoVirtual"
+	   "RcmdrPlugin_epack"
+	   "RcmdrPlugin_EZR"
+	   "RcmdrPlugin_FactoMineR"
+	   "RcmdrPlugin_HH"
+	   "RcmdrPlugin_IPSUR"
+	   "RcmdrPlugin_KMggplot2"
+	   "RcmdrPlugin_lfstat"
+	   "RcmdrPlugin_MA"
+	   "RcmdrPlugin_mosaic"
+	   "RcmdrPlugin_MPAStats"
+	   "RcmdrPlugin_orloca"
+	   "RcmdrPlugin_plotByGroup"
+	   "RcmdrPlugin_pointG"
+	   "RcmdrPlugin_qual"
+	   "RcmdrPlugin_ROC"
+	   "RcmdrPlugin_sampling"
+	   "RcmdrPlugin_SCDA"
+	   "RcmdrPlugin_SLC"
+	   "RcmdrPlugin_SM"
+	   "RcmdrPlugin_sos"
+	   "RcmdrPlugin_steepness"
+	   "RcmdrPlugin_survival"
+	   "RcmdrPlugin_TeachingDemos"
+	   "RcmdrPlugin_temis"
+	   "RcmdrPlugin_UCA"
+	   "recluster"
+	   "relax"
+	   "relimp"
+	   "RenextGUI"
+	   "reportRx"
+	   "reshapeGUI"
+	   "rgl"
+	   "RHRV"
+	   "rich"
+	   "rioja"
+	   "ripa"
+	   "rite"
+	   "RNCEP"
+	   "RQDA"
+	   "RSDA"
+	   "rsgcc"
+	   "RSurvey"
+	   "RunuranGUI"
+	   "sharpshootR"
+	   "simba"
+	   "Simile"
+	   "SimpleTable"
+	   "SOLOMON"
+	   "soundecology"
+	   "SPACECAP"
+	   "spacodiR"
+	   "spatsurv"
+	   "sqldf"
+	   "SRRS"
+	   "SSDforR"
+	   "statcheck"
+	   "StatDA"
+	   "STEPCAM"
+	   "stosim"
+	   "strvalidator"
+	   "stylo"
+	   "svDialogstcltk"
+	   "svIDE"
+	   "svSocket"
+	   "svWidgets"
+	   "SYNCSA"
+	   "SyNet"
+	   "tcltk2"
+	   "TED"
+	   "TestScorer"
+	   "TIMP"
+	   "titan"
+	   "tkrgl"
+	   "tkrplot"
+	   "tmap"
+	   "tspmeta"
+	   "TTAinterfaceTrendAnalysis"
+	   "twiddler"
+	   "vcdExtra"
+	   "VecStatGraphs3D"
+	   "vegan"
+	   "vegan3d"
+	   "vegclust"
+	   "VIMGUI"
+	   "WMCapacity"
+	   "x12GUI"
+	   "xergm"
+	 ];
+
+	 packagesToSkipCheck = [
+	   "Rmpi"     # tries to run MPI processes
+	   "gmatrix"  # requires CUDA runtime
+	   "gputools" # requires CUDA runtime
+	   "sprint"   # tries to run MPI processes
+	   "pbdMPI"   # tries to run MPI processes
+	 ];
+
+	 # Packages which cannot be installed due to lack of dependencies or other reasons.
+	 brokenPackages = [
+	   "gputools"                        # depends on non-free cudatoolkit-8.0.61
+	   "gmatrix"                         # depends on non-free cudatoolkit-8.0.61
+	 ];
+
+	 otherOverrides = old: new: {
+	   stringi = old.stringi.overrideDerivation (attrs: {
+	     postInstall = let
+	       icuName = "icudt52l";
+	       icuSrc = pkgs.fetchzip {
+		 url = "http://static.rexamine.com/packages/${icuName}.zip";
+		 sha256 = "0hvazpizziq5ibc9017i1bb45yryfl26wzfsv05vk9mc1575r6xj";
+		 stripRoot = false;
+	       };
+	       in ''
+		 ${attrs.postInstall or ""}
+		 cp ${icuSrc}/${icuName}.dat $out/library/stringi/libs
+	       '';
+	   });
+
+	   xml2 = old.xml2.overrideDerivation (attrs: {
+	     preConfigure = ''
+	       export LIBXML_INCDIR=${pkgs.libxml2.dev}/include/libxml2
+	       patchShebangs configure
+	       '';
+	   });
+
+	   Cairo = old.Cairo.overrideDerivation (attrs: {
+	     NIX_LDFLAGS = "-lfontconfig";
+	   });
+
+	   curl = old.curl.overrideDerivation (attrs: {
+	     preConfigure = "patchShebangs configure";
+	   });
+
+	   RcppArmadillo = old.RcppArmadillo.overrideDerivation (attrs: {
+	     patchPhase = "patchShebangs configure";
+	   });
+
+	   rpf = old.rpf.overrideDerivation (attrs: {
+	     patchPhase = "patchShebangs configure";
+	   });
+
+	   BayesXsrc = old.BayesXsrc.overrideDerivation (attrs: {
+	     patches = [ ./patches/BayesXsrc.patch ];
+	   });
+
+	   rJava = old.rJava.overrideDerivation (attrs: {
+	     preConfigure = ''
+	       export JAVA_CPPFLAGS=-I${pkgs.jdk}/include/
+	       export JAVA_HOME=${pkgs.jdk}
+	     '';
+	   });
+
+	   JavaGD = old.JavaGD.overrideDerivation (attrs: {
+	     preConfigure = ''
+	       export JAVA_CPPFLAGS=-I${pkgs.jdk}/include/
+	       export JAVA_HOME=${pkgs.jdk}
+	     '';
+	   });
+
+	   Mposterior = old.Mposterior.overrideDerivation (attrs: {
+	     PKG_LIBS = "-L${pkgs.openblasCompat}/lib -lopenblas";
+	   });
+
+	   qtbase = old.qtbase.overrideDerivation (attrs: {
+	     patches = [ ./patches/qtbase.patch ];
+	   });
+
+	   Rmpi = old.Rmpi.overrideDerivation (attrs: {
+	     configureFlags = [
+	       "--with-Rmpi-type=OPENMPI"
+	     ];
+	   });
+
+	   Rmpfr = old.Rmpfr.overrideDerivation (attrs: {
+	     configureFlags = [
+	       "--with-mpfr-include=${pkgs.mpfr.dev}/include"
+	     ];
+	   });
+
+	   RVowpalWabbit = old.RVowpalWabbit.overrideDerivation (attrs: {
+	     configureFlags = [
+	       "--with-boost=${pkgs.boost.dev}" "--with-boost-libdir=${pkgs.boost.out}/lib"
+	     ];
+	   });
+
+	   RAppArmor = old.RAppArmor.overrideDerivation (attrs: {
+	     patches = [ ./patches/RAppArmor.patch ];
+	     LIBAPPARMOR_HOME = "${pkgs.libapparmor}";
+	   });
+
+	   RMySQL = old.RMySQL.overrideDerivation (attrs: {
+	     patches = [ ./patches/RMySQL.patch ];
+	     MYSQL_DIR="${pkgs.mysql.lib}";
+	   });
+
+	   devEMF = old.devEMF.overrideDerivation (attrs: {
+	     NIX_CFLAGS_LINK = "-L${pkgs.xorg.libXft.out}/lib -lXft";
+	     NIX_LDFLAGS = "-lX11";
+	   });
+
+	   slfm = old.slfm.overrideDerivation (attrs: {
+	     PKG_LIBS = "-L${pkgs.openblasCompat}/lib -lopenblas";
+	   });
+
+	   SamplerCompare = old.SamplerCompare.overrideDerivation (attrs: {
+	     PKG_LIBS = "-L${pkgs.openblasCompat}/lib -lopenblas";
+	   });
+
+	   EMCluster = old.EMCluster.overrideDerivation (attrs: {
+	     patches = [ ./patches/EMCluster.patch ];
+	   });
+
+	   spMC = old.spMC.overrideDerivation (attrs: {
+	     patches = [ ./patches/spMC.patch ];
+	   });
+
+	   BayesLogit = old.BayesLogit.overrideDerivation (attrs: {
+	     patches = [ ./patches/BayesLogit.patch ];
+	     buildInputs = (attrs.buildInputs or []) ++ [ pkgs.openblasCompat ];
+	   });
+
+	   BayesBridge = old.BayesBridge.overrideDerivation (attrs: {
+	     patches = [ ./patches/BayesBridge.patch ];
+	   });
+
+	   openssl = old.openssl.overrideDerivation (attrs: {
+	     OPENSSL_INCLUDES = "${pkgs.openssl.dev}/include";
+	   });
+
+	   Rserve = old.Rserve.overrideDerivation (attrs: {
+	     patches = [ ./patches/Rserve.patch ];
+	     configureFlags = [
+	       "--with-server" "--with-client"
+	     ];
+	   });
+
+	   nloptr = old.nloptr.overrideDerivation (attrs: {
+	     configureFlags = [
+	       "--with-nlopt-cflags=-I${pkgs.nlopt}/include"
+	       "--with-nlopt-libs='-L${pkgs.nlopt}/lib -lnlopt_cxx -lm'"
+	     ];
+	   });
+
+	   V8 = old.V8.overrideDerivation (attrs: {
+	     preConfigure = "export V8_INCLUDES=${pkgs.v8}/include";
+	   });
+
+	 };
+       in
+	 self
+     #+END_SRC
+**** generate-julia-packages.jl
+**** generic-build.nix
+     #+BEGIN_SRC nix :tangle generic-build.nix
+       { stdenv, R, libcxx, xvfb_run, utillinux, Cocoa, Foundation, gettext, gfortran }:
+
+       { name, buildInputs ? [], ... } @ attrs:
+
+       stdenv.mkDerivation ({
+	 buildInputs = buildInputs ++ [R] ++
+		       stdenv.lib.optionals attrs.requireX [utillinux xvfb_run] ++
+		       stdenv.lib.optionals stdenv.isDarwin [Cocoa Foundation gettext gfortran];
+
+	 NIX_CFLAGS_COMPILE =
+	   stdenv.lib.optionalString stdenv.isDarwin "-I${libcxx}/include/c++/v1";
+
+	 configurePhase = ''
+	   runHook preConfigure
+	   export R_LIBS_SITE="$R_LIBS_SITE''${R_LIBS_SITE:+:}$out/library"
+	   runHook postConfigure
+	 '';
+
+	 buildPhase = ''
+	   runHook preBuild
+	   runHook postBuild
+	 '';
+
+	 installFlags = if attrs.doCheck or true then
+	   []
+	 else
+	   [ "--no-test-load" ];
+
+	 rCommand = if attrs.requireX or false then
+	   # Unfortunately, xvfb-run has a race condition even with -a option, so that
+	   # we acquire a lock explicitly.
+	   "flock ${xvfb_run} xvfb-run -a -e xvfb-error R"
+	 else
+	   "R";
+
+	 installPhase = ''
+	   runHook preInstall
+	   mkdir -p $out/library
+	   $rCommand CMD INSTALL $installFlags --configure-args="$configureFlags" -l $out/library .
+	   runHook postInstall
+	 '';
+
+	 postFixup = ''
+	   if test -e $out/nix-support/propagated-native-build-inputs; then
+	       ln -s $out/nix-support/propagated-native-build-inputs $out/nix-support/propagated-user-env-packages
+	   fi
+	 '';
+
+	 checkPhase = ''
+	   # noop since R CMD INSTALL tests packages
+	 '';
+       } // attrs // {
+	 name = "r-" + name;
+       })
+     #+END_SRC
+**** generic-shell.nix
+     #+BEGIN_SRC nix :tangle generic-shell.nix
+       with import ../../.. {};
+
+       stdenv.mkDerivation {
+	 name = "generate-r-packages-shell";
+
+	 buildCommand = "exit 1";
+
+	 buildInputs = [ wget ];
+
+	 nativeBuildInputs = [
+	   (rWrapper.override {
+	     packages = with rPackages; [
+	       data_table
+	       parallel
+	     ];
+	   })
+	 ];
+       }
+     #+END_SRC
+**** test-evaluation.nix
+     #+BEGIN_SRC nix :tangle test-evaluation.nix
+       # Run
+       #
+       #   nix-build test-evaluation.nix --dry-run
+       #
+       # to test whether the R package set evaluates properly.
+
+       let
+
+	 config = {
+	   allowBroken = true;
+	   allowUnfree = true;
+	 };
+
+	 inherit (import ../../.. { inherit config; }) pkgs;
+
+	 rWrapper = pkgs.rWrapper.override {
+	   packages = pkgs.lib.filter pkgs.lib.isDerivation (pkgs.lib.attrValues pkgs.rPackages);
+	 };
+
+       in
+	 rWrapper
+     #+END_SRC
+**** wrapper.nix
+     #+BEGIN_SRC nix :tangle wrapper.nix
+       { stdenv, R, makeWrapper, recommendedPackages, packages }:
+
+       stdenv.mkDerivation {
+	 name = R.name + "-wrapper";
+
+	 buildInputs = [makeWrapper R] ++ recommendedPackages ++ packages;
+
+	 unpackPhase = ":";
+
+	 installPhase = ''
+	   mkdir -p $out/bin
+	   cd ${R}/bin
+	   for exe in *; do
+	     makeWrapper ${R}/bin/$exe $out/bin/$exe \
+	       --prefix "R_LIBS_SITE" ":" "$R_LIBS_SITE"
+	   done
+	 '';
+
+	 meta = {
+	   platforms = stdenv.lib.platforms.unix;
+	 };
+       }
+     #+END_SRC
+*** compilers
+**** julia
+***** default.nix<R>
+      #+BEGIN_SRC nix :tangle pkgs/development/compilers/julia/default.nix
+	{ stdenv, fetchurl, bzip2, gfortran, libX11, libXmu, libXt, libjpeg, libpng
+	, libtiff, ncurses, pango, pcre, perl, readline, tcl, texLive, tk, xz, zlib
+	, less, texinfo, graphviz, icu, pkgconfig, bison, imake, which, jdk, openblas
+	, curl, Cocoa, Foundation, cf-private, libobjc, tzdata, fetchpatch
+	, withRecommendedPackages ? true
+	, enableStrictBarrier ? false
+	}:
+
+	stdenv.mkDerivation rec {
+	  name = "R-3.4.1";
+
+	  src = fetchurl {
+	    url = "http://cran.r-project.org/src/base/R-3/${name}.tar.gz";
+	    sha256 = "0y7wlfk3cn1dxn2mpnxwvsk31s0599crbsyah8srm5pa2mfi7c82";
+	  };
+
+	  buildInputs = [
+	    bzip2 gfortran libX11 libXmu libXt libXt libjpeg libpng libtiff ncurses
+	    pango pcre perl readline texLive xz zlib less texinfo graphviz icu
+	    pkgconfig bison imake which jdk openblas curl
+	  ] ++ stdenv.lib.optionals (!stdenv.isDarwin) [ tcl tk ]
+	    ++ stdenv.lib.optionals stdenv.isDarwin [ Cocoa Foundation cf-private libobjc ];
+
+	  patches = [ ./no-usr-local-search-paths.patch ];
+
+	  preConfigure = ''
+	    configureFlagsArray=(
+	      --disable-lto
+	      --with${stdenv.lib.optionalString (!withRecommendedPackages) "out"}-recommended-packages
+	      --with-blas="-L${openblas}/lib -lopenblas"
+	      --with-lapack="-L${openblas}/lib -lopenblas"
+	      --with-readline
+	      --with-tcltk --with-tcl-config="${tcl}/lib/tclConfig.sh" --with-tk-config="${tk}/lib/tkConfig.sh"
+	      --with-cairo
+	      --with-libpng
+	      --with-jpeglib
+	      --with-libtiff
+	      --with-ICU
+	      ${stdenv.lib.optionalString enableStrictBarrier "--enable-strict-barrier"}
+	      --enable-R-shlib
+	      AR=$(type -p ar)
+	      AWK=$(type -p gawk)
+	      CC=$(type -p gcc)
+	      CXX=$(type -p g++)
+	      FC="${gfortran}/bin/gfortran" F77="${gfortran}/bin/gfortran"
+	      JAVA_HOME="${jdk}"
+	      RANLIB=$(type -p ranlib)
+	      R_SHELL="${stdenv.shell}"
+	  '' + stdenv.lib.optionalString stdenv.isDarwin ''
+	      --without-tcltk
+	      --without-aqua
+	      --disable-R-framework
+	      CC="clang"
+	      CXX="clang++"
+	      OBJC="clang"
+	  '' + ''
+	    )
+	    echo >>etc/Renviron.in "TCLLIBPATH=${tk}/lib"
+	    echo >>etc/Renviron.in "TZDIR=${tzdata}/share/zoneinfo"
+	  '';
+
+	  installTargets = [ "install" "install-info" "install-pdf" ];
+
+	  doCheck = true;
+	  preCheck = "export TZ=CET; bin/Rscript -e 'sessionInfo()'";
+
+	  enableParallelBuilding = true;
+
+	  setupHook = ./setup-hook.sh;
+
+	  meta = with stdenv.lib; {
+	    homepage = "http://www.r-project.org/";
+	    description = "Free software environment for statistical computing and graphics";
+	    license = licenses.gpl2Plus;
+
+	    longDescription = ''
+	      GNU R is a language and environment for statistical computing and
+	      graphics that provides a wide variety of statistical (linear and
+	      nonlinear modelling, classical statistical tests, time-series
+	      analysis, classification, clustering, ...) and graphical
+	      techniques, and is highly extensible. One of R's strengths is the
+	      ease with which well-designed publication-quality plots can be
+	      produced, including mathematical symbols and formulae where
+	      needed. R is an integrated suite of software facilities for data
+	      manipulation, calculation and graphical display. It includes an
+	      effective data handling and storage facility, a suite of operators
+	      for calculations on arrays, in particular matrices, a large,
+	      coherent, integrated collection of intermediate tools for data
+	      analysis, graphical facilities for data analysis and display
+	      either on-screen or on hardcopy, and a well-developed, simple and
+	      effective programming language which includes conditionals, loops,
+	      user-defined recursive functions and input and output facilities.
+	    '';
+
+	    platforms = platforms.all;
+	    hydraPlatforms = platforms.linux;
+
+	    maintainers = [ maintainers.peti ];
+	  };
+	}
+      #+END_SRC
+***** setup-hook.sh
+***** patches
+      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0001-use-system-utf8proc.patch
+	From 54a66b5728ec98f44a1768f064509be4fd3f2ef6 Mon Sep 17 00:00:00 2001
+	From: Thomas Tuegel <ttuegel@gmail.com>
+	Date: Sat, 10 Oct 2015 13:09:48 -0500
+	Subject: [PATCH 1/3] use system utf8proc
+
+	---
+	 src/flisp/Makefile | 6 +++---
+	 1 file changed, 3 insertions(+), 3 deletions(-)
+
+	diff --git a/src/flisp/Makefile b/src/flisp/Makefile
+	index bec8624..5437b5c 100644
+	--- a/src/flisp/Makefile
+	+++ b/src/flisp/Makefile
+	@@ -24,9 +24,9 @@ DOBJS = $(SRCS:%.c=$(BUILDDIR)/%.dbg.obj)
+	 LLTDIR = ../support
+	 LLT_release = $(BUILDDIR)/$(LLTDIR)/libsupport.a
+	 LLT_debug = $(BUILDDIR)/$(LLTDIR)/libsupport-debug.a
+	-LIBFILES_release = $(LLT_release) $(LIBUV) $(LIBUTF8PROC)
+	-LIBFILES_debug = $(LLT_debug) $(LIBUV) $(LIBUTF8PROC)
+	-LIBS =
+	+LIBFILES_release = $(LLT_release) $(LIBUV)
+	+LIBFILES_debug = $(LLT_debug) $(LIBUV)
+	+LIBS = $(LIBUTF8PROC)
+	 ifneq ($(OS),WINNT)
+	 LIBS += -lpthread
+	 endif
+	--
+	2.5.2
+      #+END_SRC
+      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0001.1-use-system-utf8proc.path
+	From 54a66b5728ec98f44a1768f064509be4fd3f2ef6 Mon Sep 17 00:00:00 2001
+	From: Thomas Tuegel <ttuegel@gmail.com>
+	Date: Sat, 10 Oct 2015 13:09:48 -0500
+	Subject: [PATCH 1/3] use system utf8proc
+
+	---
+	 src/flisp/Makefile | 6 +++---
+	 1 file changed, 3 insertions(+), 3 deletions(-)
+
+	diff --git a/src/flisp/Makefile b/src/flisp/Makefile
+	index bec8624..5437b5c 100644
+	--- a/src/flisp/Makefile
+	+++ b/src/flisp/Makefile
+	@@ -24,9 +24,9 @@ DOBJS = $(SRCS:%.c=$(BUILDDIR)/%.dbg.obj)
+	 LLTDIR := ../support
+	 LLT_release := $(BUILDDIR)/$(LLTDIR)/libsupport.a
+	 LLT_debug := $(BUILDDIR)/$(LLTDIR)/libsupport-debug.a
+	-LIBFILES_release := $(LLT_release) $(LIBUV) $(LIBUTF8PROC)
+	-LIBFILES_debug := $(LLT_debug) $(LIBUV) $(LIBUTF8PROC)
+	-LIBS :=
+	+LIBFILES_release := $(LLT_release) $(LIBUV)
+	+LIBFILES_debug := $(LLT_debug) $(LIBUV)
+	+LIBS := $(LIBUTF8PROC)
+	 ifneq ($(OS),WINNT)
+	 LIBS += -lpthread
+	 endif
+	--
+	2.5.2
+
+      #+END_SRC
+      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0002-use-system-suitesparse.patch
+	From e2b0ed6664fe4adfd0f9ce8fa14732d47b30ab5c Mon Sep 17 00:00:00 2001
+	From: Thomas Tuegel <ttuegel@gmail.com>
+	Date: Sat, 10 Oct 2015 16:18:53 -0500
+	Subject: [PATCH 2/3] use system suitesparse
+
+	---
+	 base/sparse/cholmod.jl | 2 +-
+	 1 file changed, 1 insertion(+), 1 deletion(-)
+
+	diff --git a/base/sparse/cholmod.jl b/base/sparse/cholmod.jl
+	index ec7e980..f834cc1 100644
+	--- a/base/sparse/cholmod.jl
+	+++ b/base/sparse/cholmod.jl
+	@@ -151,7 +151,7 @@ function __init__()
+
+		 # Register gc tracked allocator if CHOLMOD is new enough
+		 if current_version >= v"3.0.0"
+	-            cnfg = cglobal((:SuiteSparse_config, :libsuitesparseconfig), Ptr{Void})
+	+            cnfg = cglobal((:SuiteSparse_config, :libsuitesparse), Ptr{Void})
+		     unsafe_store!(cnfg, cglobal(:jl_malloc, Ptr{Void}), 1)
+		     unsafe_store!(cnfg, cglobal(:jl_calloc, Ptr{Void}), 2)
+		     unsafe_store!(cnfg, cglobal(:jl_realloc, Ptr{Void}), 3)
+	--
+	2.5.2
+
+      #+END_SRC
+      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0003-no-ldconfig.patch
+	From 8802fe583eda93a928739cb3bc3517e19d1a6fa1 Mon Sep 17 00:00:00 2001
+	From: Thomas Tuegel <ttuegel@gmail.com>
+	Date: Sun, 11 Oct 2015 07:19:42 -0500
+	Subject: [PATCH 3/3] no ldconfig
+
+	---
+	 src/ccall.cpp | 6 +-----
+	 1 file changed, 1 insertion(+), 5 deletions(-)
+
+	diff --git a/src/ccall.cpp b/src/ccall.cpp
+	index 22015ff..2821192 100644
+	--- a/src/ccall.cpp
+	+++ b/src/ccall.cpp
+	@@ -13,11 +13,7 @@ extern "C" DLLEXPORT void jl_read_sonames(void)
+	 {
+	     char *line=NULL;
+	     size_t sz=0;
+	-#if defined(__linux__)
+	-    FILE *ldc = popen("/sbin/ldconfig -p", "r");
+	-#else
+	-    FILE *ldc = popen("/sbin/ldconfig -r", "r");
+	-#endif
+	+    FILE *ldc = popen("true", "r");
+	     if (ldc == NULL) return; // ignore errors in running ldconfig (other than whatever might have been printed to stderr)
+
+	     while (!feof(ldc)) {
+	--
+	2.5.2
+      #+END_SRC
+      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0004-hardened-0.4.7.patch
+	From 0bdbe60325a22202f8e250a9578407648a0d29b9 Mon Sep 17 00:00:00 2001
+	From: Will Dietz <w@wdtz.org>
+	Date: Wed, 1 Feb 2017 06:09:49 -0600
+	Subject: [PATCH] Set pax flags on julia binaries to disable memory protection.
+
+	---
+	 Makefile | 2 ++
+	 1 file changed, 2 insertions(+)
+
+	diff --git a/Makefile b/Makefile
+	index 8d45a1baa..91ea33b21 100644
+	--- a/Makefile
+	+++ b/Makefile
+	@@ -61,6 +61,8 @@ julia-src-release julia-src-debug : julia-src-% : julia-deps
+
+	 julia-ui-release julia-ui-debug : julia-ui-% : julia-src-%
+		@$(MAKE) $(QUIET_MAKE) -C ui julia-$*
+	+	@echo "setting PaX flags on $(JULIA_EXECUTABLE_$*)"
+	+	@paxctl -czexm $(JULIA_EXECUTABLE_$*)
+
+	 julia-inference : julia-base julia-ui-$(JULIA_BUILD_MODE) $(build_prefix)/.examples
+		@$(MAKE) $(QUIET_MAKE) $(build_private_libdir)/inference.ji JULIA_BUILD_MODE=$(JULIA_BUILD_MODE)
+	--
+	2.11.0
+
+      #+END_SRC
+      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0004-hardened.patch
+	From eddb251a00ace6e63e32e7dcb9e1ec632cac14e0 Mon Sep 17 00:00:00 2001
+	From: Will Dietz <w@wdtz.org>
+	Date: Wed, 1 Feb 2017 06:09:49 -0600
+	Subject: [PATCH] Set pax flags on julia binaries to disable memory protection.
+
+	---
+	 Makefile | 2 ++
+	 1 file changed, 2 insertions(+)
+
+	diff --git a/Makefile b/Makefile
+	index 0e28cc87b..aab8cfa8d 100644
+	--- a/Makefile
+	+++ b/Makefile
+	@@ -91,6 +91,8 @@ julia-src-release julia-src-debug : julia-src-% : julia-deps julia_flisp.boot.in
+
+	 julia-ui-release julia-ui-debug : julia-ui-% : julia-src-%
+		@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT)/ui julia-$*
+	+	@echo "setting PaX flags on $(JULIA_EXECUTABLE_$*)"
+	+	@paxctl -czexm $(JULIA_EXECUTABLE_$*)
+
+	 julia-inference : julia-base julia-ui-$(JULIA_BUILD_MODE) $(build_prefix)/.examples
+		@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT) $(build_private_libdir)/inference.ji JULIA_BUILD_MODE=$(JULIA_BUILD_MODE)
+	--
+	2.11.0
+
+      #+END_SRC
