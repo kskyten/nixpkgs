@@ -1,3 +1,4 @@
+
 { stdenv, fetchFromGitHub, fetchgit, fetchurl
 # build tools
 , gfortran, m4, makeWrapper, patchelf, perl, which, python2, paxctl
@@ -89,50 +90,50 @@ rec {
 
     makeFlags =
       let
-	arch = head (splitString "-" stdenv.system);
-	march = { "x86_64" = "x86-64"; "i686" = "pentium4"; }."${arch}"
-		or (throw "unsupported architecture: ${arch}");
-	# Julia requires Pentium 4 (SSE2) or better
-	cpuTarget = { "x86_64" = "x86-64"; "i686" = "pentium4"; }."${arch}"
-		    or (throw "unsupported architecture: ${arch}");
+        arch = head (splitString "-" stdenv.system);
+        march = { "x86_64" = "x86-64"; "i686" = "pentium4"; }."${arch}"
+                or (throw "unsupported architecture: ${arch}");
+        # Julia requires Pentium 4 (SSE2) or better
+        cpuTarget = { "x86_64" = "x86-64"; "i686" = "pentium4"; }."${arch}"
+                    or (throw "unsupported architecture: ${arch}");
       in [
-	"ARCH=${arch}"
-	"MARCH=${march}"
-	"JULIA_CPU_TARGET=${cpuTarget}"
-	"PREFIX=$(out)"
-	"prefix=$(out)"
-	"SHELL=${stdenv.shell}"
+        "ARCH=${arch}"
+        "MARCH=${march}"
+        "JULIA_CPU_TARGET=${cpuTarget}"
+        "PREFIX=$(out)"
+        "prefix=$(out)"
+        "SHELL=${stdenv.shell}"
 
-	"USE_SYSTEM_BLAS=1"
-	"USE_BLAS64=${if openblas.blas64 then "1" else "0"}"
-	"LIBBLAS=-lopenblas"
-	"LIBBLASNAME=libopenblas"
+        "USE_SYSTEM_BLAS=1"
+        "USE_BLAS64=${if openblas.blas64 then "1" else "0"}"
+        "LIBBLAS=-lopenblas"
+        "LIBBLASNAME=libopenblas"
 
-	"USE_SYSTEM_LAPACK=1"
-	"LIBLAPACK=-lopenblas"
-	"LIBLAPACKNAME=libopenblas"
+        "USE_SYSTEM_LAPACK=1"
+        "LIBLAPACK=-lopenblas"
+        "LIBLAPACKNAME=libopenblas"
 
-	"USE_SYSTEM_SUITESPARSE=1"
-	"SUITESPARSE_LIB=-lsuitesparse"
-	"SUITESPARSE_INC=-I${suitesparse}/include"
+        "USE_SYSTEM_SUITESPARSE=1"
+        "SUITESPARSE_LIB=-lsuitesparse"
+        "SUITESPARSE_INC=-I${suitesparse}/include"
 
-	"USE_SYSTEM_ARPACK=1"
-	"USE_SYSTEM_FFTW=1"
-	"USE_SYSTEM_GMP=1"
-	"USE_SYSTEM_LIBGIT2=1"
-	"USE_SYSTEM_LIBUNWIND=1"
-	# 'replutil' test failure with LLVM 3.8.0, invalid libraries with 3.7.1
-	"USE_SYSTEM_LLVM=1"
-	"USE_SYSTEM_MPFR=1"
-	"USE_SYSTEM_OPENLIBM=1"
-	"USE_SYSTEM_OPENSPECFUN=1"
-	"USE_SYSTEM_PATCHELF=1"
-	"USE_SYSTEM_PCRE=1"
-	"PCRE_CONFIG=${pcre2.dev}/bin/pcre2-config"
-	"PCRE_INCL_PATH=${pcre2.dev}/include/pcre2.h"
-	"USE_SYSTEM_READLINE=1"
-	"USE_SYSTEM_UTF8PROC=1"
-	"USE_SYSTEM_ZLIB=1"
+        "USE_SYSTEM_ARPACK=1"
+        "USE_SYSTEM_FFTW=1"
+        "USE_SYSTEM_GMP=1"
+        "USE_SYSTEM_LIBGIT2=1"
+        "USE_SYSTEM_LIBUNWIND=1"
+        # 'replutil' test failure with LLVM 3.8.0, invalid libraries with 3.7.1
+        "USE_SYSTEM_LLVM=1"
+        "USE_SYSTEM_MPFR=1"
+        "USE_SYSTEM_OPENLIBM=1"
+        "USE_SYSTEM_OPENSPECFUN=1"
+        "USE_SYSTEM_PATCHELF=1"
+        "USE_SYSTEM_PCRE=1"
+        "PCRE_CONFIG=${pcre2.dev}/bin/pcre2-config"
+        "PCRE_INCL_PATH=${pcre2.dev}/include/pcre2.h"
+        "USE_SYSTEM_READLINE=1"
+        "USE_SYSTEM_UTF8PROC=1"
+        "USE_SYSTEM_ZLIB=1"
       ];
 
     NIX_CFLAGS_COMPILE = [ "-fPIC" ];
@@ -163,9 +164,9 @@ rec {
 
     postInstall = ''
       for prog in "$out/bin/julia" "$out/bin/julia-debug"; do
-	  wrapProgram "$prog" \
-	      --prefix LD_LIBRARY_PATH : "$LD_LIBRARY_PATH:$out/lib/julia" \
-	      --prefix PATH : "${stdenv.lib.makeBinPath [ curl ]}"
+          wrapProgram "$prog" \
+              --prefix LD_LIBRARY_PATH : "$LD_LIBRARY_PATH:$out/lib/julia" \
+              --prefix PATH : "${stdenv.lib.makeBinPath [ curl ]}"
       done
     '';
 
