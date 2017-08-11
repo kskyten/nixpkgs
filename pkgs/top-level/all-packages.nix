@@ -5706,40 +5706,49 @@ with pkgs;
 
   ### Julia
 
-  julia = callPackage ../development/compilers/julia {
-    gmp = gmp6;
-    openblas = openblasCompat;
-    inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
-    llvm = llvm_37;
-  };
+julia = callPackage ../development/compilers/julia {
+	# TODO: split docs into a separate output
+	  gmp = gmp6;
+	  openblas = openblasCompat;
+	  inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+	  llvm = llvm_39;
+	# withRecommendedPackages = false;
+      };
 
-  julia_05 = callPackage ../development/compilers/julia/0.5.nix {
-    gmp = gmp6;
-    openblas = openblasCompat;
-    inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
-    llvm = llvm_38;
-  };
+  # julia = callPackage ../development/compilers/julia {
+  #   gmp = gmp6;
+  #   openblas = openblasCompat;
+  #   inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+  #   llvm = llvm_37;
+  # };
 
-  julia-git = lowPrio (callPackage ../development/compilers/julia/git.nix {
-    gmp = gmp6;
-    openblas = openblasCompat;
-    inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
-    llvm = llvm_39;
-  });
+  # julia_05 = callPackage ../development/compilers/julia/0.5.nix {
+  #   gmp = gmp6;
+  #   openblas = openblasCompat;
+  #   inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+  #   llvm = llvm_38;
+  # };
 
-  inherit (callPackage ../development/compilers/julia/new_default.nix {
-    gmp = gmp6;
-    openblas = openblasCompat;
-    inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
-    llvm = llvm_39;
-  }) myjulia;
+  # julia-git = lowPrio (callPackage ../development/compilers/julia/git.nix {
+  #   gmp = gmp6;
+  #   openblas = openblasCompat;
+  #   inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+  #   llvm = llvm_39;
+  # });
+
+  # inherit (callPackage ../development/compilers/julia/new_default.nix {
+  #   gmp = gmp6;
+  #   openblas = openblasCompat;
+  #   inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+  #   llvm = llvm_39;
+  # }) myjulia;
 
 
-  buildJuliaPackage = callPackage ../development/julia-modules/generic myjulia;
+  # buildJuliaPackage = callPackage ../development/julia-modules/generic myjulia;
 
-  juliaPackages = recurseIntoAttrs (callPackage ./julia-packages.nix {
-    overrides = (config.juliaPackageOverrides or (p: {})) pkgs;
-  });
+  # juliaPackages = recurseIntoAttrs (callPackage ./julia-packages.nix {
+  #   overrides = (config.juliaPackageOverrides or (p: {})) pkgs;
+  # });
 
   ### End of Julia
 

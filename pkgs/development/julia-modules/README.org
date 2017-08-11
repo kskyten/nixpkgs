@@ -7,23 +7,22 @@
 * TODO install.sh
   #+BEGIN_SRC sh :tangle install.sh
     #1 /ust/bin/env sh
-    echo "Overwriting pkgs/development/julia-modules/default.nix"
     echo "Overwriting pkgs/development/compilers/julia/default.nix"
-    echo "Overwriting pkgs/top-level/julia-packages.nix"
+    cp -r pkgs/development/compilers/julia/* ../compilers/julia
 
     echo "You will have to manually copy any changes to"
     echo "pkgs/top-level/all-packages.nix."
   #+END_SRC
 * tests
 ** TODO script
-   #+BEGIN_SRC julia :tangle tests/script
+   #+BEGIN_SRC julia :tangle tests/script :mkdirp yes
      #! /usr/bin/nix-shell
      #!
      @test 1 == 1
    #+END_SRC
 ** DONE shell.nix
    - State "DONE"       from              [2017-08-05 Sat 17:59]
-   #+BEGIN_SRC nix :tangle tests/shell.nix
+   #+BEGIN_SRC nix :tangle tests/shell.nix :mkdirp yes
      let
        pkgs = import <nixpkgs> {};
        stdenv = pkgs.stdenv;
@@ -44,25 +43,28 @@
 ** top-level
 *** DONE all-packages.nix
     - State "DONE"       from              [2017-08-05 Sat 18:05]
-    #+BEGIN_SRC nix :tangle pkgs/top-level/all-definitions.nix
+    #+BEGIN_SRC nix :tangle pkgs/top-level/all-definitions.nix :mkdirp yes
 
       julia = callPackage ../development/compilers/julia {
 	# TODO: split docs into a separate output
-	openblas = openblasCompat;
-	withRecommendedPackages = false;
+	  gmp = gmp6;
+	  openblas = openblasCompat;
+	  inherit (darwin.apple_sdk.frameworks) CoreServices ApplicationServices;
+	  llvm = llvm_39;
+	# withRecommendedPackages = false;
       };
 
-      juliaWrapper = callPackage ../development/julia-modules/wrapper.nix {
-	recommendedPackages = with juliaPackages; [
-	  # BinDeps
-	];
-	# Override this attribute to register additional libraries.
-	packages = [];
-      };
+      # juliaWrapper = callPackage ../development/julia-modules/wrapper.nix {
+      #   recommendedPackages = with juliaPackages; [
+      #     # BinDeps
+      #   ];
+      #   # Override this attribute to register additional libraries.
+      #   packages = [];
+      # };
 
-      juliaPackages = callPackage ../development/julia-modules {
-	overrides = (config.juliaPackageOverrides or (p: {})) pkgs;
-      };
+      # juliaPackages = callPackage ../development/julia-modules {
+      #   overrides = (config.juliaPackageOverrides or (p: {})) pkgs;
+      # };
 
     #+END_SRC
 ** development
@@ -89,7 +91,6 @@
 	 mkDerive = {mkHomepage, mkUrls}: args:
 	     lib.makeOverridable ({
 	       name, version, sha256,
-	       rev, owner, repo,
 	       depends ? [],
 	       doCheck ? true,
 	       requireX ? false,
@@ -99,8 +100,8 @@
 	   name = "${name}-${version}";
 	   src = fetchFromGitHub {
 	     inherit sha256;
-	     (args // { inherit owner repo rev; });
-	     # urls = mkUrls (args // { inherit name version; });
+	     # (args // { inherit owner repo rev; });
+	     urls = mkUrls (args // { inherit name version; });
 	   };
 	   inherit doCheck requireX;
 	   propagatedBuildInputs = depends;
@@ -284,7 +285,7 @@
 	 # `self` is `_self` with overridden packages;
 	 # packages in `_self` may depends on overridden packages.
 	 self = (defaultOverrides _self self) // overrides;
-	 _self = import ./julia-packages.nix { inherit self; derive = deriveBioc; }
+	 _self = import ./julia-packages.nix { inherit self; derive = deriveBioc; };
 
 	 # tweaks for the individual packages and "in self" follow
 
@@ -482,7 +483,7 @@
 *** compilers
 **** julia
 ***** TODO default.nix<R>
-      #+BEGIN_SRC nix :tangle pkgs/development/compilers/julia/default.nix
+      #+BEGIN_SRC nix tangle pkgs/development/compilers/julia/default.nix
 	{ stdenv, fetchurl, bzip2, gfortran, libX11, libXmu, libXt, libjpeg, libpng
 	, libtiff, ncurses, pango, pcre, perl, readline, tcl, texLive, tk, xz, zlib
 	, less, texinfo, graphviz, icu, pkgconfig, bison, imake, which, jdk, openblas
@@ -586,7 +587,7 @@
       #+END_SRC
 ***** DONE default.nix
       - State "DONE"       from              [2017-08-05 Sat 19:01]
-      #+BEGIN_SRC nix :tangle pkgs/development/compilers/julia/default.nix
+      #+BEGIN_SRC nix :tangle pkgs/development/compilers/julia/default.nix :mkdirp yes
 	{ stdenv, fetchFromGitHub, fetchgit, fetchurl
 	# build tools
 	, gfortran, m4, makeWrapper, patchelf, perl, which, python2, paxctl
@@ -622,31 +623,31 @@
 	    suitesparseWithBlas = suitesparse.overrideAttrs (oldAttrs: rec {
 	      inherit openblas; });
 
-	    # dsfmtVersion = "2.2.3";
-	    # dsfmt = fetchurl {
-	    #   url = "http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/dSFMT-src-${dsfmtVersion}.tar.gz";
-	    #   sha256 = "03kaqbjbi6viz0n33dk5jlf6ayxqlsq4804n7kwkndiga9s4hd42";
-	    # };
+	    dsfmtVersion = "2.2.3";
+	    dsfmt = fetchurl {
+	      url = "http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/dSFMT-src-${dsfmtVersion}.tar.gz";
+	      sha256 = "03kaqbjbi6viz0n33dk5jlf6ayxqlsq4804n7kwkndiga9s4hd42";
+	    };
 
-	    # libuvVersion = "8d5131b6c1595920dd30644cd1435b4f344b46c8";
-	    # libuv = fetchurl {
-	    #   url = "https://api.github.com/repos/JuliaLang/libuv/tarball/${libuvVersion}";
-	    #   sha256 = "1886r04igcs0k24sbb61wn10f8ki35c39jsnc5djv3rg4hvn9l49";
-	    # };
+	    libuvVersion = "8d5131b6c1595920dd30644cd1435b4f344b46c8";
+	    libuv = fetchurl {
+	      url = "https://api.github.com/repos/JuliaLang/libuv/tarball/${libuvVersion}";
+	      sha256 = "1886r04igcs0k24sbb61wn10f8ki35c39jsnc5djv3rg4hvn9l49";
+	    };
 
-	    # rmathVersion = "0.1";
-	    # rmath-julia = fetchurl {
-	    #   url = "https://api.github.com/repos/JuliaLang/Rmath-julia/tarball/v${rmathVersion}";
-	    #   sha256 = "0ai5dhjc43zcvangz123ryxmlbm51s21rg13bllwyn98w67arhb4";
-	    # };
+	    rmathVersion = "0.1";
+	    rmath-julia = fetchurl {
+	      url = "https://api.github.com/repos/JuliaLang/Rmath-julia/tarball/v${rmathVersion}";
+	      sha256 = "0ai5dhjc43zcvangz123ryxmlbm51s21rg13bllwyn98w67arhb4";
+	    };
 
-	    # virtualenvVersion = "15.0.0";
-	    # virtualenv = fetchurl {
-	    #   url = "mirror://pypi/v/virtualenv/virtualenv-${virtualenvVersion}.tar.gz";
-	    #   sha256 = "06fw4liazpx5vf3am45q2pdiwrv0id7ckv7n6zmpml29x6vkzmkh";
-	    # };
+	    virtualenvVersion = "15.0.0";
+	    virtualenv = fetchurl {
+	      url = "mirror://pypi/v/virtualenv/virtualenv-${virtualenvVersion}.tar.gz";
+	      sha256 = "06fw4liazpx5vf3am45q2pdiwrv0id7ckv7n6zmpml29x6vkzmkh";
+	    };
 
-	    with import ./deps;
+	    # with import ./deps;
 
 	    prePatch = ''
 	      mkdir deps/srccache
@@ -775,7 +776,7 @@
 	    rev = "903644385b91ed8d95e5e3a5716c089dd1f1b08a";
 	    sha256 = "196fw7w9qxx5i7f68ya1s0427i8jfkbh2ysdv0l8q7i726wp0x9i";
 	  };
-	}
+	}.myjulia
       #+END_SRC
 ***** DONE deps.nix
       - State "DONE"       from              [2017-08-05 Sat 19:02]
@@ -808,185 +809,11 @@
       #+END_SRC
 ***** DONE setup-hook.sh
       - State "DONE"       from              [2017-08-05 Sat 17:54]
-      #+BEGIN_SRC sh
+      #+BEGIN_SRC sh :tangle pkgs/development/compilers/julia/setup-hook.sh :mkdirp yes
 	addJuliaLoadPath () {
 	    addToSearchPath JULIA_LOAD_PATH $1/src
 	}
 	echo "added $1/julia-packages to load path"
 
 	envHooks+=(addJuliaLoadPath)
-      #+END_SRC
-***** DONE patches
-      - State "DONE"       from              [2017-08-05 Sat 17:53]
-      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0001-use-system-utf8proc.patch
-	From 54a66b5728ec98f44a1768f064509be4fd3f2ef6 Mon Sep 17 00:00:00 2001
-	From: Thomas Tuegel <ttuegel@gmail.com>
-	Date: Sat, 10 Oct 2015 13:09:48 -0500
-	Subject: [PATCH 1/3] use system utf8proc
-
-	---
-	 src/flisp/Makefile | 6 +++---
-	 1 file changed, 3 insertions(+), 3 deletions(-)
-
-	diff --git a/src/flisp/Makefile b/src/flisp/Makefile
-	index bec8624..5437b5c 100644
-	--- a/src/flisp/Makefile
-	+++ b/src/flisp/Makefile
-	@@ -24,9 +24,9 @@ DOBJS = $(SRCS:%.c=$(BUILDDIR)/%.dbg.obj)
-	 LLTDIR = ../support
-	 LLT_release = $(BUILDDIR)/$(LLTDIR)/libsupport.a
-	 LLT_debug = $(BUILDDIR)/$(LLTDIR)/libsupport-debug.a
-	-LIBFILES_release = $(LLT_release) $(LIBUV) $(LIBUTF8PROC)
-	-LIBFILES_debug = $(LLT_debug) $(LIBUV) $(LIBUTF8PROC)
-	-LIBS =
-	+LIBFILES_release = $(LLT_release) $(LIBUV)
-	+LIBFILES_debug = $(LLT_debug) $(LIBUV)
-	+LIBS = $(LIBUTF8PROC)
-	 ifneq ($(OS),WINNT)
-	 LIBS += -lpthread
-	 endif
-	--
-	2.5.2
-      #+END_SRC
-      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0001.1-use-system-utf8proc.path
-	From 54a66b5728ec98f44a1768f064509be4fd3f2ef6 Mon Sep 17 00:00:00 2001
-	From: Thomas Tuegel <ttuegel@gmail.com>
-	Date: Sat, 10 Oct 2015 13:09:48 -0500
-	Subject: [PATCH 1/3] use system utf8proc
-
-	---
-	 src/flisp/Makefile | 6 +++---
-	 1 file changed, 3 insertions(+), 3 deletions(-)
-
-	diff --git a/src/flisp/Makefile b/src/flisp/Makefile
-	index bec8624..5437b5c 100644
-	--- a/src/flisp/Makefile
-	+++ b/src/flisp/Makefile
-	@@ -24,9 +24,9 @@ DOBJS = $(SRCS:%.c=$(BUILDDIR)/%.dbg.obj)
-	 LLTDIR := ../support
-	 LLT_release := $(BUILDDIR)/$(LLTDIR)/libsupport.a
-	 LLT_debug := $(BUILDDIR)/$(LLTDIR)/libsupport-debug.a
-	-LIBFILES_release := $(LLT_release) $(LIBUV) $(LIBUTF8PROC)
-	-LIBFILES_debug := $(LLT_debug) $(LIBUV) $(LIBUTF8PROC)
-	-LIBS :=
-	+LIBFILES_release := $(LLT_release) $(LIBUV)
-	+LIBFILES_debug := $(LLT_debug) $(LIBUV)
-	+LIBS := $(LIBUTF8PROC)
-	 ifneq ($(OS),WINNT)
-	 LIBS += -lpthread
-	 endif
-	--
-	2.5.2
-
-      #+END_SRC
-      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0002-use-system-suitesparse.patch
-	From e2b0ed6664fe4adfd0f9ce8fa14732d47b30ab5c Mon Sep 17 00:00:00 2001
-	From: Thomas Tuegel <ttuegel@gmail.com>
-	Date: Sat, 10 Oct 2015 16:18:53 -0500
-	Subject: [PATCH 2/3] use system suitesparse
-
-	---
-	 base/sparse/cholmod.jl | 2 +-
-	 1 file changed, 1 insertion(+), 1 deletion(-)
-
-	diff --git a/base/sparse/cholmod.jl b/base/sparse/cholmod.jl
-	index ec7e980..f834cc1 100644
-	--- a/base/sparse/cholmod.jl
-	+++ b/base/sparse/cholmod.jl
-	@@ -151,7 +151,7 @@ function __init__()
-
-		 # Register gc tracked allocator if CHOLMOD is new enough
-		 if current_version >= v"3.0.0"
-	-            cnfg = cglobal((:SuiteSparse_config, :libsuitesparseconfig), Ptr{Void})
-	+            cnfg = cglobal((:SuiteSparse_config, :libsuitesparse), Ptr{Void})
-		     unsafe_store!(cnfg, cglobal(:jl_malloc, Ptr{Void}), 1)
-		     unsafe_store!(cnfg, cglobal(:jl_calloc, Ptr{Void}), 2)
-		     unsafe_store!(cnfg, cglobal(:jl_realloc, Ptr{Void}), 3)
-	--
-	2.5.2
-
-      #+END_SRC
-      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0003-no-ldconfig.patch
-	From 8802fe583eda93a928739cb3bc3517e19d1a6fa1 Mon Sep 17 00:00:00 2001
-	From: Thomas Tuegel <ttuegel@gmail.com>
-	Date: Sun, 11 Oct 2015 07:19:42 -0500
-	Subject: [PATCH 3/3] no ldconfig
-
-	---
-	 src/ccall.cpp | 6 +-----
-	 1 file changed, 1 insertion(+), 5 deletions(-)
-
-	diff --git a/src/ccall.cpp b/src/ccall.cpp
-	index 22015ff..2821192 100644
-	--- a/src/ccall.cpp
-	+++ b/src/ccall.cpp
-	@@ -13,11 +13,7 @@ extern "C" DLLEXPORT void jl_read_sonames(void)
-	 {
-	     char *line=NULL;
-	     size_t sz=0;
-	-#if defined(__linux__)
-	-    FILE *ldc = popen("/sbin/ldconfig -p", "r");
-	-#else
-	-    FILE *ldc = popen("/sbin/ldconfig -r", "r");
-	-#endif
-	+    FILE *ldc = popen("true", "r");
-	     if (ldc == NULL) return; // ignore errors in running ldconfig (other than whatever might have been printed to stderr)
-
-	     while (!feof(ldc)) {
-	--
-	2.5.2
-      #+END_SRC
-      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0004-hardened-0.4.7.patch
-	From 0bdbe60325a22202f8e250a9578407648a0d29b9 Mon Sep 17 00:00:00 2001
-	From: Will Dietz <w@wdtz.org>
-	Date: Wed, 1 Feb 2017 06:09:49 -0600
-	Subject: [PATCH] Set pax flags on julia binaries to disable memory protection.
-
-	---
-	 Makefile | 2 ++
-	 1 file changed, 2 insertions(+)
-
-	diff --git a/Makefile b/Makefile
-	index 8d45a1baa..91ea33b21 100644
-	--- a/Makefile
-	+++ b/Makefile
-	@@ -61,6 +61,8 @@ julia-src-release julia-src-debug : julia-src-% : julia-deps
-
-	 julia-ui-release julia-ui-debug : julia-ui-% : julia-src-%
-		@$(MAKE) $(QUIET_MAKE) -C ui julia-$*
-	+	@echo "setting PaX flags on $(JULIA_EXECUTABLE_$*)"
-	+	@paxctl -czexm $(JULIA_EXECUTABLE_$*)
-
-	 julia-inference : julia-base julia-ui-$(JULIA_BUILD_MODE) $(build_prefix)/.examples
-		@$(MAKE) $(QUIET_MAKE) $(build_private_libdir)/inference.ji JULIA_BUILD_MODE=$(JULIA_BUILD_MODE)
-	--
-	2.11.0
-
-      #+END_SRC
-      #+BEGIN_SRC diff :tangle pkgs/development/compilers/julia/patches/0004-hardened.patch
-	From eddb251a00ace6e63e32e7dcb9e1ec632cac14e0 Mon Sep 17 00:00:00 2001
-	From: Will Dietz <w@wdtz.org>
-	Date: Wed, 1 Feb 2017 06:09:49 -0600
-	Subject: [PATCH] Set pax flags on julia binaries to disable memory protection.
-
-	---
-	 Makefile | 2 ++
-	 1 file changed, 2 insertions(+)
-
-	diff --git a/Makefile b/Makefile
-	index 0e28cc87b..aab8cfa8d 100644
-	--- a/Makefile
-	+++ b/Makefile
-	@@ -91,6 +91,8 @@ julia-src-release julia-src-debug : julia-src-% : julia-deps julia_flisp.boot.in
-
-	 julia-ui-release julia-ui-debug : julia-ui-% : julia-src-%
-		@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT)/ui julia-$*
-	+	@echo "setting PaX flags on $(JULIA_EXECUTABLE_$*)"
-	+	@paxctl -czexm $(JULIA_EXECUTABLE_$*)
-
-	 julia-inference : julia-base julia-ui-$(JULIA_BUILD_MODE) $(build_prefix)/.examples
-		@$(MAKE) $(QUIET_MAKE) -C $(BUILDROOT) $(build_private_libdir)/inference.ji JULIA_BUILD_MODE=$(JULIA_BUILD_MODE)
-	--
-	2.11.0
-
       #+END_SRC
