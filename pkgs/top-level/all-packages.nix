@@ -5744,7 +5744,18 @@ julia = callPackage ../development/compilers/julia {
   # }) myjulia;
 
 
-  # buildJuliaPackage = callPackage ../development/julia-modules/generic myjulia;
+  buildJuliaPackage = callPackage ../development/julia-modules/generic-build.nix { inherit julia; };
+
+
+  MLKernels = buildJuliaPackage rec {
+    name = "MLKernels";
+    src = fetchFromGitHub {
+      owner = "trthatcher";
+      repo = "MLKernels.jl";
+      rev = "v0.2.0";
+      sha256 = "01kc47d3q9dk63hqag9sa83fdh24hj12x4zv94vdhas7sp2fqzfw";
+    };
+  };
 
   # juliaPackages = recurseIntoAttrs (callPackage ./julia-packages.nix {
   #   overrides = (config.juliaPackageOverrides or (p: {})) pkgs;

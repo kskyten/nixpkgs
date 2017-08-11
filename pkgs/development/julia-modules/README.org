@@ -54,6 +54,19 @@
 	# withRecommendedPackages = false;
       };
 
+      buildJuliaPackage = callPackage ../development/julia-modules/generic-build.nix { inherit julia; };
+
+      MLKernels = buildJuliaPackage rec {
+	name = "MLKernels";
+	src = fetchFromGitHub {
+	  owner = "trthatcher";
+	  repo = "MLKernels.jl";
+	  rev = "v0.2.0";
+	  sha256 = "01kc47d3q9dk63hqag9sa83fdh24hj12x4zv94vdhas7sp2fqzfw";
+	};
+      };
+
+
       # juliaWrapper = callPackage ../development/julia-modules/wrapper.nix {
       #   recommendedPackages = with juliaPackages; [
       #     # BinDeps
@@ -65,7 +78,6 @@
       # juliaPackages = callPackage ../development/julia-modules {
       #   overrides = (config.juliaPackageOverrides or (p: {})) pkgs;
       # };
-
     #+END_SRC
 ** development
 *** julia-modules
@@ -357,18 +369,12 @@
 **** DONE generic-build.nix
      - State "DONE"       from "TODO"       [2017-08-05 Sat 18:42]
      #+BEGIN_SRC nix :tangle generic-build.nix
-       # { stdenv, julia, libcxx, xvfb_run, utillinux, Cocoa, Foundation, gettext, gfortran }:
        { stdenv, julia }:
 
        { name, buildInputs ? [], ... } @ attrs:
 
        stdenv.mkDerivation ({
 	 buildInputs = buildInputs ++ [julia];
-	 # ++ stdenv.lib.optionals attrs.requireX [utillinux xvfb_run]
-	 # ++ stdenv.lib.optionals stdenv.isDarwin [Cocoa Foundation gettext gfortran];
-
-	 # NIX_CFLAGS_COMPILE =
-	 #   stdenv.lib.optionalString stdenv.isDarwin "-I${libcxx}/include/c++/v1";
 
 	 configurePhase = ''
 	   runHook preConfigure
