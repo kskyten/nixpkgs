@@ -5,7 +5,7 @@
   #+END_SRC
 * runtests.sh
 * TODO install.sh
-  #+BEGIN_SRC sh :tangle install.sh
+  #+BEGIN_SRC sh :tangle install.sh :tangle-mode (identity #o755)
     #1 /ust/bin/env sh
     echo "Overwriting pkgs/development/compilers/julia/default.nix"
     cp -r pkgs/development/compilers/julia/* ../compilers/julia
