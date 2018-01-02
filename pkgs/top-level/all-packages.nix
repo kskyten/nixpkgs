@@ -5744,8 +5744,9 @@ julia = callPackage ../development/compilers/julia {
   # }) myjulia;
 
 
-  buildJuliaPackage = callPackage ../development/julia-modules/generic-build.nix { inherit julia; };
+  # buildJuliaPackage = callPackage ../development/julia-modules/generic-build.nix { inherit julia; };
 
+  buildJuliaPackage = callPackage ../development/julia-modules/generic julia;
 
   MLKernels = buildJuliaPackage rec {
     name = "MLKernels";
@@ -5755,6 +5756,19 @@ julia = callPackage ../development/compilers/julia {
       rev = "v0.2.0";
       sha256 = "01kc47d3q9dk63hqag9sa83fdh24hj12x4zv94vdhas7sp2fqzfw";
     };
+  };
+
+    HPAT = buildJuliaPackage rec {
+    name = "HPAT";
+    src = fetchFromGitHub {
+      owner = "IntelLabs";
+      repo = "HPAT.jl";
+      rev = "ad6275b99c39ed6f3f63996d38fc8269ecf98372";
+      sha256 = "0pbgm9h6f0q19xvvj82jn8bkd8643r9jd39wcr1pzz9p0p3igpdg";
+    };
+
+    # not really a dependency
+    buildInputs = [ MLKernels ];
   };
 
   # juliaPackages = recurseIntoAttrs (callPackage ./julia-packages.nix {
