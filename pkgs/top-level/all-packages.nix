@@ -3513,6 +3513,10 @@ with pkgs;
 
   nomad = callPackage ../applications/networking/cluster/nomad { };
 
+  noteshrink = callPackage ../tools/graphics/noteshrink {
+    pythonPackages = python3Packages;
+  };
+
   milu = callPackage ../applications/misc/milu { };
 
   mpack = callPackage ../tools/networking/mpack { };
