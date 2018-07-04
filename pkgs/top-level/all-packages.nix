@@ -878,6 +878,10 @@ with pkgs;
 
   borgbackup = callPackage ../tools/backup/borg { };
 
+  borgmatic = callPackage ../tools/backup/borgmatic {
+    pythonPackages = python3Packages;
+  };
+
   boomerang = libsForQt5.callPackage ../development/tools/boomerang { };
 
   boost-build = callPackage ../development/tools/boost-build { };
