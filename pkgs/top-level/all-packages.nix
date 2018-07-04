@@ -18455,6 +18455,8 @@ with pkgs;
 
   todo-txt-cli = callPackage ../applications/office/todo.txt-cli { };
 
+  todoman = callPackage ../applications/misc/todoman { };
+
   tomahawk = callPackage ../applications/audio/tomahawk {
     taglib = taglib_1_9;
     enableXMPP      = config.tomahawk.enableXMPP      or true;
