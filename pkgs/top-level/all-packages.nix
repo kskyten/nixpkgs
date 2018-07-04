@@ -13238,6 +13238,8 @@ with pkgs;
 
   winstone = callPackage ../servers/http/winstone { };
 
+  xandikos = callPackage ../servers/xandikos { };
+
   xinetd = callPackage ../servers/xinetd { };
 
   zookeeper = callPackage ../servers/zookeeper { };
