@@ -1,0 +1,25 @@
+From 8d12bf378f4dcb459e44902be8985dba91ec6583 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Kusti=20Skyt=C3=A9n?= <kos23@cam.ac.uk>
+Date: Wed, 4 Jul 2018 19:14:32 +0100
+Subject: [PATCH] Use system suitesparse
+
+---
+ stdlib/SuiteSparse/src/cholmod.jl | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/stdlib/SuiteSparse/src/cholmod.jl b/stdlib/SuiteSparse/src/cholmod.jl
+index c64f199cdc..1a574c23ce 100644
+--- a/stdlib/SuiteSparse/src/cholmod.jl
++++ b/stdlib/SuiteSparse/src/cholmod.jl
+@@ -156,7 +156,7 @@ function __init__()
+ 
+         # Register gc tracked allocator if CHOLMOD is new enough
+         if current_version >= v"3.0.0"
+-            cnfg = cglobal((:SuiteSparse_config, :libsuitesparseconfig), Ptr{Cvoid})
++            cnfg = cglobal((:SuiteSparse_config, :libsuitesparse), Ptr{Cvoid})
+             unsafe_store!(cnfg, cglobal(:jl_malloc, Ptr{Cvoid}), 1)
+             unsafe_store!(cnfg, cglobal(:jl_calloc, Ptr{Cvoid}), 2)
+             unsafe_store!(cnfg, cglobal(:jl_realloc, Ptr{Cvoid}), 3)
+-- 
+2.15.1
+
